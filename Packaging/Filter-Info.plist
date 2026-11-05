@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key><string>en</string>
+    <key>CFBundleExecutable</key><string>EnsureVPNFilter</string>
+    <key>CFBundleIdentifier</key><string>dev.ensurevpn.app.filter</string>
+    <key>CFBundleName</key><string>Ensure VPN Filter</string>
+    <key>CFBundleDisplayName</key><string>Ensure VPN Filter</string>
+    <key>CFBundlePackageType</key><string>SYSX</string>
+    <key>CFBundleShortVersionString</key><string>0.1.0</string>
+    <key>CFBundleVersion</key><string>1</string>
+    <key>LSMinimumSystemVersion</key><string>14.0</string>
+    <key>NSSystemExtensionUsageDescription</key>
+    <string>Blocks outgoing packets outside your selected WireGuard tunnel, except its server connection and essential network configuration.</string>
+    <key>NetworkExtension</key>
+    <dict>
+        <key>NEProviderClasses</key>
+        <dict>
+            <key>com.apple.networkextension.filter-packet</key>
+            <string>EnsureVPNPacketFilterProvider</string>
+        </dict>
+    </dict>
+</dict>
+</plist>
