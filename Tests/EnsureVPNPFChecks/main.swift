@@ -91,12 +91,92 @@ for report in ["", "en0", "lo0\nunknown: changed output", "lo0\n[unexpected skip
 }
 check("Canonical comparison preserves rule order", PFPolicy.normalizedRules("pass   quick on lo0 all no state\n\nblock drop out quick all") == ["pass quick on lo0 all no state", "block drop out quick all"])
 
+// Saved connection migration and aggregation must not widen the helper's policy.
+let legacyJSON = Data(#"{"name":"Home","tunnelAddresses":["10.8.0.2","fd00:0::2"],"endpoints":[{"address":"192.0.2.1","port":51820}],"importedAt":1234,"usesHostnameEndpoint":true,"PrivateKey":"do-not-save-this-key"}"#.utf8)
+let migrated = try SavedVPNProfiles.decode(current: nil, legacy: legacyJSON)
+check("Legacy single connection migrates", migrated.count == 1 && migrated[0].name == "Home")
+check("Legacy addresses canonicalized", migrated[0].tunnelAddresses == ["10.8.0.2", "fd00::2"])
+check("Legacy public metadata preserved", migrated[0].importedAt == Date(timeIntervalSinceReferenceDate: 1234) && migrated[0].usesHostnameEndpoint == true)
+let migratedData = try SavedVPNProfiles.encode(migrated)
+check("Profile encoding retains no unknown key material", !String(decoding: migratedData, as: UTF8.self).contains("PrivateKey") && !String(decoding: migratedData, as: UTF8.self).contains("do-not-save-this-key"))
+let reloaded = try SavedVPNProfiles.decode(current: migratedData, legacy: legacyJSON)
+check("Migrated identity remains stable after persistence", reloaded == migrated)
+let noSavedProfiles = try SavedVPNProfiles.decode(current: nil, legacy: nil)
+let intentionallyEmptyProfiles = try SavedVPNProfiles.decode(current: Data("[]".utf8), legacy: legacyJSON)
+check("No saved configuration decodes empty", noSavedProfiles.isEmpty)
+check("Empty current store does not resurrect legacy connection", intentionallyEmptyProfiles.isEmpty)
+rejects("Corrupt current store cannot fall back to stale legacy") {
+    _ = try SavedVPNProfiles.decode(current: Data("broken".utf8), legacy: legacyJSON)
+}
+rejects("Oversized current profile store rejected") {
+    _ = try SavedVPNProfiles.decode(current: Data(repeating: 32, count: 2_097_153), legacy: nil)
+}
+rejects("Oversized legacy profile rejected") {
+    _ = try SavedVPNProfiles.decode(current: nil, legacy: Data(repeating: 32, count: 2_097_153))
+}
+let withoutHostnameFlag = try SavedVPNProfiles.decode(current: nil, legacy: Data(#"{"name":"Old","tunnelAddresses":["10.8.0.2"],"endpoints":[{"address":"192.0.2.1","port":51820}],"importedAt":0}"#.utf8))
+check("Old optional hostname field migrates", withoutHostnameFlag[0].usesHostnameEndpoint == nil)
+rejects("Legacy malformed endpoints rejected") {
+    _ = try SavedVPNProfiles.decode(current: nil, legacy: Data(#"{"name":"Old","tunnelAddresses":["10.8.0.2"],"endpoints":[{"address":"192.0.2.1","port":0}],"importedAt":0}"#.utf8))
+}
+
+let home = try SavedVPNProfile(name: "Home", tunnelAddresses: ["10.8.0.2"], endpoints: [endpoint4])
+let office = try SavedVPNProfile(name: "Home", tunnelAddresses: ["10.9.0.2"], endpoints: [endpoint4, endpoint6])
+let bothProfiles = try SavedVPNProfiles.appending(imported: [office], to: [home])
+check("Distinct connections with the same name both retained", bothProfiles.count == 2 && bothProfiles[0].id == home.id && bothProfiles[1].id == office.id)
+let combined = try SavedVPNProfiles.combinedConfiguration(bothProfiles)
+check("Multiple profiles combine exact tunnel addresses", combined.tunnelAddresses == ["10.8.0.2", "10.9.0.2"])
+check("Shared endpoints are deduplicated", Set(combined.endpoints) == Set([endpoint4, endpoint6]))
+let homeDuplicate = try SavedVPNProfile(name: "Renamed file", tunnelAddresses: ["10.8.0.2"], endpoints: [endpoint4, endpoint4])
+let noDuplicate = try SavedVPNProfiles.appending(imported: [homeDuplicate, homeDuplicate], to: bothProfiles)
+check("Duplicate configurations preserve existing identity and metadata", noDuplicate == bothProfiles)
+let removedOffice = try SavedVPNProfiles.combinedConfiguration(bothProfiles.filter { $0.id != office.id })
+check("Removing a profile removes its unique addresses and endpoints", removedOffice.tunnelAddresses == home.tunnelAddresses && removedOffice.endpoints == home.endpoints)
+let removedHome = try SavedVPNProfiles.combinedConfiguration(bothProfiles.filter { $0.id != home.id })
+check("Removing a profile retains exceptions shared by another", Set(removedHome.endpoints) == Set([endpoint4, endpoint6]))
+let emptyRoundTrip = try SavedVPNProfiles.decode(current: SavedVPNProfiles.encode([]), legacy: nil)
+check("Empty list persists", emptyRoundTrip.isEmpty)
+rejects("Empty connection list cannot enable the helper") { _ = try SavedVPNProfiles.combinedConfiguration([]) }
+rejects("Duplicate saved identities rejected on encode") { _ = try SavedVPNProfiles.encode([home, home]) }
+rejects("Duplicate saved identities rejected on decode") {
+    _ = try SavedVPNProfiles.decode(current: JSONEncoder().encode([home, home]), legacy: nil)
+}
+let identityCollision = try SavedVPNProfile(id: home.id, name: "Other", tunnelAddresses: office.tunnelAddresses, endpoints: office.endpoints)
+rejects("Different imported configuration cannot reuse existing identity") {
+    _ = try SavedVPNProfiles.appending(imported: [identityCollision], to: [home])
+}
+rejects("Invalid profile address rejected before persistence") {
+    _ = try SavedVPNProfile(name: "Bad", tunnelAddresses: ["10.8.0.2\npass all"], endpoints: [endpoint4])
+}
+
+let manySharedAddresses = try (1...64).map { index in
+    try SavedVPNProfile(name: "Server \(index)", tunnelAddresses: ["10.8.0.2"], endpoints: [
+        ResolvedEndpoint(address: IPAddress("192.0.2.\(index)")!, port: 51820)
+    ])
+}
+let combinedShared = try SavedVPNProfiles.combinedConfiguration(manySharedAddresses)
+check("Limits count unique addresses across saved connections", combinedShared.tunnelAddresses.count == 1 && combinedShared.endpoints.count == 64)
+rejects("More than 64 saved connections rejected") { _ = try SavedVPNProfiles.encode(manySharedAddresses + [office]) }
+let manyUniqueAddresses = try (1...33).map { index in
+    try SavedVPNProfile(name: "Tunnel \(index)", tunnelAddresses: ["10.8.0.\(index)"], endpoints: [endpoint4])
+}
+rejects("Combined address limit enforced before saving") { _ = try SavedVPNProfiles.encode(manyUniqueAddresses) }
+let firstEndpoints = (1...128).map { ResolvedEndpoint(address: IPAddress("192.0.2.\($0)")!, port: 51820) }
+let fullProfile = try SavedVPNProfile(name: "Full", tunnelAddresses: ["10.8.0.2"], endpoints: firstEndpoints)
+let extraProfile = try SavedVPNProfile(name: "Extra", tunnelAddresses: ["10.8.0.2"], endpoints: [endpoint6])
+rejects("Combined endpoint limit enforced before appending") {
+    _ = try SavedVPNProfiles.appending(imported: [extraProfile], to: [fullProfile])
+}
+let multiProfileRules = try PFPolicy.rules(configuration: combined, trustedInterfaces: [])
+check("Every saved server receives an exact UDP exception", multiProfileRules.contains("to 192.0.2.1/32 port = 51820") && multiProfileRules.contains("to 2001:db8::1/128 port = 51820"))
+check("Multiple saved connections retain default denial", multiProfileRules.hasSuffix("block drop in quick all\nblock drop out quick all\n"))
+
 // Exercise Apple's actual PF parser without loading rules or opening /dev/pf.
 // -n means no changes. This remains safe without administrator privileges.
 let directory = FileManager.default.temporaryDirectory.appendingPathComponent("ensure-vpn-pfchecks-\(UUID().uuidString)")
 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
 defer { try? FileManager.default.removeItem(at: directory) }
-for (name, rules) in [("connected", connected), ("disconnected", disconnected)] {
+for (name, rules) in [("connected", connected), ("disconnected", disconnected), ("multiple-profiles", multiProfileRules)] {
     let path = directory.appendingPathComponent(name + ".pf")
     try Data(rules.utf8).write(to: path)
     let process = Process()

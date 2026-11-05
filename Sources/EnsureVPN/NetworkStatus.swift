@@ -6,12 +6,16 @@ struct TunnelObservation: Equatable {
     var interfaces: [String] = []
     var isPresent: Bool { !interfaces.isEmpty }
 
-    static func read(addresses: [String]) -> TunnelObservation {
+    static func read(addresses: [String], inventory: [String: Set<String>]) -> TunnelObservation {
+        let interfaces = addresses.compactMap(canonicalIP).flatMap { inventory[$0] ?? [] }
+        return .init(interfaces: Set(interfaces).sorted())
+    }
+
+    static func inventory() -> [String: Set<String>] {
         var first: UnsafeMutablePointer<ifaddrs>?
-        guard getifaddrs(&first) == 0, let first else { return .init() }
+        guard getifaddrs(&first) == 0, let first else { return [:] }
         defer { freeifaddrs(first) }
-        let expected = Set(addresses.compactMap(canonicalIP))
-        var matches = Set<String>()
+        var matches: [String: Set<String>] = [:]
         var cursor: UnsafeMutablePointer<ifaddrs>? = first
         while let current = cursor {
             defer { cursor = current.pointee.ifa_next }
@@ -26,9 +30,9 @@ struct TunnelObservation: Equatable {
             guard getnameinfo(address, socklen_t(address.pointee.sa_len), &host,
                               socklen_t(host.count), nil, 0, NI_NUMERICHOST) == 0 else { continue }
             let value = String(cString: host).components(separatedBy: "%")[0]
-            if let normalized = canonicalIP(value), expected.contains(normalized) { matches.insert(name) }
+            if let normalized = canonicalIP(value) { matches[normalized, default: []].insert(name) }
         }
-        return .init(interfaces: matches.sorted())
+        return matches
     }
 }
 

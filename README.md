@@ -30,16 +30,18 @@ That is optional packaging for distribution, not a requirement for PF enforcemen
 ## Set up WireGuard
 
 1. Install WireGuard for macOS and configure the tunnel there. Latch does not implement a VPN or manage WireGuard keys.
-2. Import that tunnel's `.conf` file into Latch. Only interface addresses and peer server endpoints are saved; private keys and preshared keys are discarded. The original file still contains secrets, so keep it private.
-3. Review the resolved server IP addresses and UDP ports under connection exceptions.
+2. Use **Add WireGuard profiles** to choose one or more `.conf` files. Additional imports keep your existing profiles. Only interface addresses and peer server endpoints are saved; private keys and preshared keys are discarded. The original files still contain secrets, so keep them private.
+3. Expand each saved profile to review its tunnel addresses and resolved server IP/UDP port exceptions. All saved profiles are allowed; duplicate configurations are skipped.
 4. Turn on **Always-on VPN** and approve the macOS administrator prompt. Latch checks the existing PF setup, installs its helper, loads its own rules, and resets existing tracked connections before reporting verified rules.
-5. Activate the matching tunnel in WireGuard. When the tunnel disconnects, ordinary physical-interface traffic remains blocked rather than being allowed until a status poll notices.
+5. Activate any saved tunnel in WireGuard. You can switch between saved tunnels while Always-on VPN stays on. When no saved tunnel is connected, ordinary physical-interface traffic remains blocked rather than being allowed until a status poll notices.
+
+Adding or removing profiles requires Always-on VPN off and a known helper status. To remove one, expand its row and choose **Remove profile**. Turn the guard back on to apply the updated combined exceptions. Latch allows up to 64 saved profiles, with at most 32 unique tunnel addresses and 128 unique server endpoints across them. All server exceptions remain available even when that profile is inactive, so WireGuard can connect to any saved server. Earlier single-profile data is migrated automatically without changing live firewall rules. An interface match is based on assigned addresses, not on a WireGuard handshake; profiles sharing an address can show the same match.
 
 **Enabling the guard resets PF's global connection-state table.** This can interrupt existing connections, including other applications' sessions. The reset is necessary because old PF states can otherwise bypass new rules. It happens on initial activation and when the helper needs to reacquire enforcement after a reboot or PF reset; ordinary status polling and tunnel updates do not reset all states.
 
 For a full internet tunnel, WireGuard should route `0.0.0.0/0` and, when supported, `::/0`. Split-tunnel traffic excluded from WireGuard is blocked rather than sent directly. DNS must be reachable inside the tunnel; there is no broad cleartext DNS exception.
 
-For reliable reconnects, configure a **numeric server IP in WireGuard itself**, then export and import that configuration into Latch. Latch can resolve a hostname to build exceptions, but it does not populate WireGuard's DNS cache. After that cache expires, WireGuard may be unable to reconnect because direct DNS is blocked. Reimport after changing a server IP or port, with Always-on VPN off.
+For reliable reconnects, configure a **numeric server IP in WireGuard itself**, then export and import that configuration into Latch. Latch can resolve a hostname to build exceptions, but it does not populate WireGuard's DNS cache. After that cache expires, WireGuard may be unable to reconnect because direct DNS is blocked. After changing a server IP or port, remove the old saved profile and import the updated file with Always-on VPN off.
 
 ## What the guard permits
 

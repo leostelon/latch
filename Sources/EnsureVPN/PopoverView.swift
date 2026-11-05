@@ -3,7 +3,6 @@ import SwiftUI
 struct PopoverView: View {
     @ObservedObject var model: AppModel
     @State private var showEnableConfirmation = false
-    @State private var showDetails = false
     @State private var showPreferences = false
 
     private var guardLabel: String {
@@ -26,7 +25,7 @@ struct PopoverView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     VStack(alignment: .leading, spacing: 10) {
-                        Image(systemName: model.profile == nil ? "lock.shield" : model.symbol)
+                        Image(systemName: model.profiles.isEmpty ? "lock.shield" : model.symbol)
                             .font(.system(size: 32, weight: .light))
                             .foregroundStyle(model.filter.isVerified && model.filter.isEnabled ? Color.accentColor : Color.secondary)
                             .accessibilityHidden(true)
@@ -47,10 +46,10 @@ struct PopoverView: View {
                                 if value { showEnableConfirmation = true }
                                 else { model.filter.disable() }
                             })).labelsHidden().toggleStyle(.switch)
-                                .disabled(model.filter.isBusy || model.importing || (model.profile == nil && !model.filter.isEnabled))
+                                .disabled(model.filter.isBusy || model.importing || (!model.filter.isEnabled && (model.profiles.isEmpty || model.filter.isStatusUncertain)))
                         }
-                        Text(model.profile == nil
-                             ? "Import your WireGuard configuration to enable this switch."
+                        Text(model.profiles.isEmpty
+                             ? "Add a WireGuard profile to enable this switch."
                              : "On blocks connections outside your VPN. Off allows normal networking. Administrator approval is required to change it.")
                             .font(.system(size: 11)).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -59,30 +58,10 @@ struct PopoverView: View {
 
                     trafficView
 
-                    if let profile = model.profile {
-                        VStack(alignment: .leading, spacing: 10) {
-                            HStack {
-                                Text("Tunnel").foregroundStyle(.secondary)
-                                Spacer()
-                                Text(profile.name).lineLimit(1).truncationMode(.middle)
-                            }
-                            HStack {
-                                Text("Interface").foregroundStyle(.secondary)
-                                Spacer()
-                                Text(model.observation.interfaces.isEmpty ? "Not detected" : model.observation.interfaces.joined(separator: ", "))
-                            }
-                            DisclosureGroup("Connection exceptions", isExpanded: $showDetails) {
-                                VStack(alignment: .leading, spacing: 6) {
-                                    ForEach(profile.endpoints, id: \.self) { endpoint in
-                                        Text("\(endpoint.address) · UDP \(endpoint.port)").textSelection(.enabled)
-                                    }
-                                    Text("WireGuard server traffic, loopback, DHCP, and local IPv6 discovery remain available. Other incoming and outgoing connections must use your tunnel.")
-                                        .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                                }.font(.system(size: 11)).padding(.top, 6)
-                            }.foregroundStyle(.secondary)
-                        }.font(.system(size: 12))
+                    if !model.profiles.isEmpty {
+                        VPNProfilesView(model: model)
 
-                        if profile.usesHostnameEndpoint == true {
+                        if model.profiles.contains(where: { $0.usesHostnameEndpoint == true }) {
                             Label("For reliable reconnection without direct DNS, use a numeric server IP in WireGuard, then export and reimport its configuration.", systemImage: "info.circle")
                                 .font(.system(size: 11)).foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -98,10 +77,10 @@ struct PopoverView: View {
                     } else {
                         VStack(alignment: .leading, spacing: 10) {
                             Button(action: model.importProfile) {
-                                Label(model.importing ? "Importing…" : "Import WireGuard configuration", systemImage: "square.and.arrow.down")
+                                Label(model.importing ? "Importing…" : "Add WireGuard profiles", systemImage: "plus")
                                     .frame(maxWidth: .infinity)
-                            }.buttonStyle(.borderedProminent).controlSize(.large).disabled(model.importing)
-                            Text("Choose your tunnel’s .conf file. Private keys are never saved. No Apple developer account is needed.")
+                            }.buttonStyle(.borderedProminent).controlSize(.large).disabled(!model.canEditProfiles)
+                            Text("Choose one or more .conf files. Private keys are never saved. No Apple developer account is needed.")
                                 .font(.system(size: 11)).foregroundStyle(.secondary)
                         }
                     }
@@ -117,10 +96,6 @@ struct PopoverView: View {
                             Toggle("Show speeds in menu bar", isOn: .init(get: { model.showMenuBarSpeeds }, set: model.setShowMenuBarSpeeds))
                             Toggle("Open at login", isOn: .init(get: { model.launchAtLogin }, set: model.setLogin))
                             Toggle("Notify when the tunnel disconnects", isOn: .init(get: { model.notifyOnDisconnect }, set: model.setNotifications))
-                            if model.profile != nil {
-                                Button(model.importing ? "Importing…" : "Import another configuration…", action: model.importProfile)
-                                    .disabled(model.filter.isEnabled || model.filter.isBusy || model.importing)
-                            }
                             Button("Check firewall with administrator…", action: model.filter.checkWithAdministrator)
                                 .disabled(model.filter.isBusy)
                             Button("Restore normal networking…", action: model.filter.disable)
@@ -146,7 +121,7 @@ struct PopoverView: View {
             Button("Turn on", action: model.enable)
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Connections outside your WireGuard tunnel will be blocked in both directions, except VPN server traffic and basic network setup. Existing network sessions will reset once to close bypasses. macOS will ask for an administrator password to install and run the local helper. Turning the switch off restores normal networking.")
+            Text("Connections outside your saved WireGuard tunnels will be blocked in both directions, except their server traffic and basic network setup. Existing network sessions will reset once to close bypasses. macOS will ask for an administrator password to run the local helper. You can switch between saved tunnels while the guard stays on.")
         }
     }
 

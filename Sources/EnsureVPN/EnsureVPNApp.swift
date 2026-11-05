@@ -2,6 +2,7 @@ import AppKit
 import Combine
 import SwiftUI
 import UserNotifications
+import EnsureVPNCore
 
 @main
 struct EnsureVPNApp: App {
@@ -18,7 +19,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
-        model = AppModel()
+        if CommandLine.arguments.contains("--preview-profiles") {
+            // In-memory examples for visual QA; never written to user preferences.
+            let examples = try? [
+                SavedVPNProfile(name: "Personal", tunnelAddresses: ["10.50.0.2"],
+                                endpoints: [.init(address: IPAddress("192.0.2.10")!, port: 51820)]),
+                SavedVPNProfile(name: "Work", tunnelAddresses: ["10.60.0.2", "fd00:60::2"],
+                                endpoints: [.init(address: IPAddress("198.51.100.20")!, port: 51820),
+                                            .init(address: IPAddress("2001:db8::20")!, port: 51820)])
+            ]
+            model = AppModel(previewProfiles: examples ?? [])
+        } else {
+            model = AppModel()
+        }
         UNUserNotificationCenter.current().delegate = self
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = statusItem.button {
@@ -32,7 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         subscription = model.objectWillChange.sink { [weak self] _ in
             DispatchQueue.main.async { self?.updateStatusItem() }
         }
-        if CommandLine.arguments.contains("--preview") {
+        if CommandLine.arguments.contains("--preview") || CommandLine.arguments.contains("--preview-profiles") {
             renderPreview()
         } else if !UserDefaults.standard.bool(forKey: "hasLaunched") {
             UserDefaults.standard.set(true, forKey: "hasLaunched")
