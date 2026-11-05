@@ -20,7 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         NSApp.setActivationPolicy(.accessory)
         model = AppModel()
         UNUserNotificationCenter.current().delegate = self
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = statusItem.button {
             button.target = self
             button.action = #selector(togglePopover)
@@ -45,12 +45,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         image?.isTemplate = true
         statusItem.button?.image = image
         if model.showMenuBarSpeeds {
-            let download = model.traffic.available ? TrafficRates.formatted(model.traffic.download) : "—"
-            let upload = model.traffic.available ? TrafficRates.formatted(model.traffic.upload) : "—"
-            statusItem.button?.title = " ↓ \(download)  ↑ \(upload)"
-            statusItem.button?.font = .monospacedDigitSystemFont(ofSize: 10, weight: .regular)
+            statusItem.length = MenuBarRates.itemLength
+            statusItem.button?.title = MenuBarRates.title(download: model.traffic.download,
+                                                        upload: model.traffic.upload,
+                                                        available: model.traffic.available)
+            statusItem.button?.font = MenuBarRates.font
             statusItem.button?.imagePosition = .imageLeading
-        } else { statusItem.button?.title = "" }
+        } else {
+            statusItem.length = NSStatusItem.squareLength
+            statusItem.button?.title = ""
+            statusItem.button?.imagePosition = .imageOnly
+        }
         statusItem.button?.toolTip = "Latch: \(model.statusTitle). Always-on VPN \(model.filter.isEnabled ? "on" : "off")."
     }
 
