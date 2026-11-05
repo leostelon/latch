@@ -59,29 +59,12 @@ struct PopoverView: View {
                     trafficView
 
                     if !model.profiles.isEmpty {
-                        VPNProfilesView(model: model)
-
-                        if model.profiles.contains(where: { $0.usesHostnameEndpoint == true }) {
-                            Label("For reliable reconnection without direct DNS, use a numeric server IP in WireGuard, then export and reimport its configuration.", systemImage: "info.circle")
-                                .font(.system(size: 11)).foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-
                         Button(action: model.openWireGuard) { Text("Open WireGuard").frame(maxWidth: .infinity) }
                             .buttonStyle(.borderedProminent).controlSize(.large)
                         if model.filter.isEnabled {
                             Text("The guard stays on when you quit this app. It reapplies after restart, but protection before the helper starts is not guaranteed.")
                                 .font(.system(size: 11)).foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
-                        }
-                    } else {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Button(action: model.importProfile) {
-                                Label(model.importing ? "Importing…" : "Add WireGuard profiles", systemImage: "plus")
-                                    .frame(maxWidth: .infinity)
-                            }.buttonStyle(.borderedProminent).controlSize(.large).disabled(!model.canEditProfiles)
-                            Text("Choose one or more .conf files. Private keys are never saved. No Apple developer account is needed.")
-                                .font(.system(size: 11)).foregroundStyle(.secondary)
                         }
                     }
 
@@ -103,6 +86,24 @@ struct PopoverView: View {
                             Button("Setup & recovery instructions", action: model.openBuildInstructions)
                         }.toggleStyle(.checkbox).padding(.top, 10)
                     }.font(.system(size: 12))
+
+                    if !model.profiles.isEmpty {
+                        VPNProfilesView(model: model)
+                        if model.profiles.contains(where: { $0.usesHostnameEndpoint == true }) {
+                            Label("For reliable reconnection without direct DNS, use a numeric server IP in WireGuard, then export and reimport its configuration.", systemImage: "info.circle")
+                                .font(.system(size: 11)).foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    } else {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Button(action: model.importProfile) {
+                                Label(model.importing ? "Importing…" : "Add WireGuard profiles", systemImage: "plus")
+                                    .frame(maxWidth: .infinity)
+                            }.buttonStyle(.borderedProminent).controlSize(.large).disabled(!model.canEditProfiles)
+                            Text("Choose one or more .conf files. Private keys are never saved. No Apple developer account is needed.")
+                                .font(.system(size: 11)).foregroundStyle(.secondary)
+                        }
+                    }
                 }.padding(20)
             }.frame(maxHeight: 650)
 
