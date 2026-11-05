@@ -41,22 +41,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private func updateStatusItem() {
-        let image = NSImage(systemSymbolName: model.symbol, accessibilityDescription: "Latch")
-        image?.isTemplate = true
-        statusItem.button?.image = image
+        statusItem.button?.title = ""
+        statusItem.button?.imagePosition = .imageOnly
         if model.showMenuBarSpeeds {
             statusItem.length = MenuBarRates.itemLength
-            statusItem.button?.title = MenuBarRates.title(download: model.traffic.download,
-                                                        upload: model.traffic.upload,
-                                                        available: model.traffic.available)
-            statusItem.button?.font = MenuBarRates.font
-            statusItem.button?.imagePosition = .imageLeading
+            statusItem.button?.image = MenuBarRates.image(symbol: model.symbol,
+                                                         download: model.traffic.download,
+                                                         upload: model.traffic.upload,
+                                                         available: model.traffic.available)
         } else {
             statusItem.length = NSStatusItem.squareLength
-            statusItem.button?.title = ""
-            statusItem.button?.imagePosition = .imageOnly
+            let image = NSImage(systemSymbolName: model.symbol, accessibilityDescription: "Latch")
+            image?.isTemplate = true
+            statusItem.button?.image = image
         }
-        statusItem.button?.toolTip = "Latch: \(model.statusTitle). Always-on VPN \(model.filter.isEnabled ? "on" : "off")."
+        let download = MenuBarRates.formatted(model.traffic.download, available: model.traffic.available)
+        let upload = MenuBarRates.formatted(model.traffic.upload, available: model.traffic.available)
+        statusItem.button?.setAccessibilityValue("\(model.statusTitle). Download \(download), upload \(upload).")
+        statusItem.button?.toolTip = "Latch: \(model.statusTitle). Always-on VPN \(model.filter.isEnabled ? "on" : "off").\nDownload \(download) · Upload \(upload)"
     }
 
     @objc private func togglePopover() {
